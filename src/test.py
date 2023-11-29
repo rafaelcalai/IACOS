@@ -24,9 +24,18 @@ cap = cv2.VideoCapture(0)
 counter_left_arm = 0 
 counter_right_arm = 0 
 counter_stop = 0 
+counter_advance = 0 
+
+deb_counter_left_arm = 0 
+deb_counter_right_arm = 0 
+deb_counter_stop = 0 
+deb_counter_advance = 0 
+
 stage_left_arm = None
 stage_right_arm = None
 stage_stop = None
+stage_advance = None
+action = None
 
 ## Setup mediapipe instance
 with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
@@ -65,21 +74,27 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
             z_right_wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y,landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].z]
             z_right_hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y,landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].z]
 
+            z_left_shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y,landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].z]
+            z_left_elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y,landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].z]
+            z_left_wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y,landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].z]
+            z_left_hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y,landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].z]
+
 
             
             # Calculate angle
             angle_left_elbow = calculate_angle(left_shoulder, left_elbow, left_wrist)
+            angle_left_arm = calculate_angle(right_shoulder, left_shoulder, left_wrist)
             angle_left_shoulder = calculate_angle(left_hip, left_elbow, left_wrist)
 
             # Calculate angle
             angle_right_elbow = calculate_angle(right_shoulder, right_elbow, right_wrist)
+            angle_right_arm = calculate_angle(left_shoulder, right_shoulder, right_wrist)
             angle_right_shoulder = calculate_angle(right_hip, right_elbow, right_wrist)
 
             # Calculate angle
             angle_right_wrist = calculate_angle(z_right_hip, z_right_shoulder, z_right_wrist)
-            angle_right_arm = calculate_angle(left_shoulder, right_shoulder, right_wrist)
-
-            #print(angle_right_wrist, " -> ", angle_right_arm )
+            angle_left_wrist = calculate_angle(z_left_hip, z_left_shoulder, z_left_wrist)
+            
 
             
             # Visualize angle
@@ -109,39 +124,59 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                                 )
             
             
-
-
             
             # Curl counter logic
-            if angle_left_elbow > 160 and (angle_left_shoulder > 85 and angle_left_shoulder < 140):
+            if angle_left_elbow > 160 and (angle_left_shoulder > 85 and angle_left_shoulder < 140) and action is not "turn_left" :
                 if stage_left_arm is None:
-                    counter_left_arm +=1
-                    print(counter_left_arm)
-                stage_left_arm = "turn_left"    
+                    deb_counter_left_arm +=1
+                if deb_counter_left_arm > 3:    
+                    stage_left_arm = action = "turn_left" 
+                    print(counter_left_arm, " ", stage_left_arm)
+                    counter_left_arm +=1 
             else:
                 stage_left_arm = None
+                deb_counter_left_arm = 0
 
 
               # Curl counter logic
-            if angle_right_elbow > 160 and (angle_right_shoulder > 85 and angle_right_shoulder < 140) :
+            if angle_right_elbow > 160 and (angle_right_shoulder > 85 and angle_right_shoulder < 140) and action is not  "turn_right":
                 if stage_right_arm is None:
-                    counter_right_arm +=1
-                    print(counter_right_arm) 
-                stage_right_arm = "turn_right"    
+                    deb_counter_right_arm +=1
+                if deb_counter_right_arm > 3:     
+                    stage_right_arm = action = "turn_right"
+                    print(counter_right_arm, " ","turn_right")
+                    counter_right_arm += 1  
             else:
-                stage_right_arm = None  
+                stage_right_arm = None
+                deb_counter_right_arm = 0  
 
               # Curl counter logic
-            if angle_right_arm > 85 and angle_right_arm < 105  and (angle_right_wrist > 85 and angle_right_shoulder < 180) :
+            if angle_right_arm > 95 and angle_right_arm < 110  and (angle_right_wrist > 100 and angle_right_shoulder < 180) and action is not "stop":
                 if stage_stop is None:
-                    counter_stop +=1
-                    print(counter_stop) 
-                stage_stop = "stop"    
+                    deb_counter_stop +=1
+                if deb_counter_stop > 3:     
+                    stage_stop = action = "stop" 
+                    print(counter_stop, " ", "stop")
+                    counter_stop +=1  
             else:
-                stage_stop = None       
+                stage_stop = None
+                deb_counter_stop = 0     
+
+            if angle_left_arm > 70 and angle_left_arm < 100  and (angle_left_wrist > 70 and angle_left_wrist < 100) and action is not "advance":
+                if stage_advance is None:
+                    deb_counter_advance +=1
+                if deb_counter_advance > 3:    
+                    stage_advance = action = "advance" 
+                    print(counter_advance, " ", "advance") 
+                    counter_advance +=1   
+            else:
+                stage_advance = None 
+                deb_counter_advance = 0        
                        
         except:
             pass
+
+        print (angle_left_arm, angle_left_wrist)
         
         # Render curl counter
         # Setup status box
@@ -152,57 +187,35 @@ with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1, cv2.LINE_AA)
         cv2.putText(image, str(counter_left_arm), 
                     (10,40), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
-        
-        # Stage data
-        cv2.putText(image, 'STAGE', (85,12), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(image, stage_left_arm, 
-                    (80,40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)  
+
+        # Rep data
+        cv2.putText(image, 'RIGHT REPS', (150,12), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, str(counter_right_arm), 
+                    (200,40), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
         
 
         # Rep data
-        cv2.putText(image, 'RIGHT REPS', (350,12), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(image, str(counter_right_arm), 
+        cv2.putText(image, 'STOP REPS', (300,12), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, str(counter_stop), 
                     (350,40), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
         
-        # Stage data
-        cv2.putText(image, 'STAGE', (435,12), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(image, stage_right_arm, 
-                    (400,40), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
-        
-
         # Rep data
-        cv2.putText(image, 'STOP REPS', (10,60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(image, str(counter_stop), 
-                    (10,90), 
+        cv2.putText(image, 'ADVANCE REPS', (450,12), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, str(counter_advance),    
+                    (500,40), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
         
         # Stage data
-        cv2.putText(image, 'STAGE', (85,60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(image, stage_stop, 
-                    (80,90), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
-        
-        # Rep data
-        cv2.putText(image, 'ADVANCE REPS', (350,60), 
+        cv2.putText(image, 'STAGE', (325,60), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(image, str(counter_right_arm), 
-                    (350,90), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
-        
-        # Stage data
-        cv2.putText(image, 'STAGE', (435,60), 
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
-        cv2.putText(image, stage_right_arm, 
-                    (400,90), 
+        cv2.putText(image, action, 
+                    (300,100), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
 
         
