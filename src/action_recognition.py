@@ -3,7 +3,7 @@ import mediapipe as mp
 import numpy as np
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
-mp_hands = mp.solutions.hands
+mp_holistic = mp.solutions.holistic # Holistic model
 
 class VideoCamera:
     def __init__(self):
@@ -45,7 +45,7 @@ class GestureRecognition(VideoCamera):
     # Public methods
     def detec_gesture(self):
         ## Setup mediapipe instance
-        with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+        with mp_holistic.Holistic(min_detection_confidence=0.5, min_tracking_confidence=0.5) as holistic:
             while self.__cap.isOpened():
                 ret, frame = self.__cap.read()
                 
@@ -54,33 +54,29 @@ class GestureRecognition(VideoCamera):
                 image.flags.writeable = False
             
                 # Make detection
-                results = pose.process(image)
+                results = holistic.process(image)
             
                 # Recolor back to BGR
                 image.flags.writeable = True
                 image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
                 
-                try:
+                try:     
                     # Extract landmarks
                     landmarks = results.pose_landmarks.landmark
-                    
+
                     coordinate = self.__get_coordinates(landmarks)
                     angle = self.__calc_angles(coordinate)
                     self.__identify_geture(angle)
                     self.__print_angles(image, angle, coordinate)
+                    if self.__action == "No human detected!":
+                        self.__action = None
 
                 except Exception as error:
-                    print("An exception occurred:", error) # An exception occurred: division by zero
-
+                    self.__action = "No human detected!"
 
                 self.__setup_image_box(image)
-
-                # Render detections
-                mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
-                                        mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2), 
-                                        mp_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2) 
-                                        )               
-                
+                self.__draw_landmarks(image, results)
+                                  
                 cv2.imshow('ERR - IACOS ', image)
 
                 if cv2.waitKey(10) & 0xFF == ord('q'):
@@ -166,8 +162,8 @@ class GestureRecognition(VideoCamera):
                 self.__deb_counter_left_arm +=1
             if self.__deb_counter_left_arm > 3:    
                 stage_left_arm = self.__action = "turn_left" 
-                print(self.__counter_left_arm, " ", stage_left_arm)
                 self.__counter_left_arm +=1 
+                print(self.__counter_left_arm, " ", stage_left_arm)
         else:
             self.__stage_left_arm = None
             self.__deb_counter_left_arm = 0
@@ -179,8 +175,8 @@ class GestureRecognition(VideoCamera):
                 self.__deb_counter_right_arm +=1
             if self.__deb_counter_right_arm > 3:     
                 self.__stage_right_arm = self.__action = "turn_right"
-                print(self.__counter_right_arm, " ","turn_right")
-                self.__counter_right_arm += 1  
+                self.__counter_right_arm += 1
+                print(self.__counter_right_arm, " ","turn_right")  
         else:
             self.__stage_right_arm = None
             self.__deb_counter_right_arm = 0  
@@ -191,8 +187,8 @@ class GestureRecognition(VideoCamera):
                 self.__deb_counter_stop +=1
             if self.__deb_counter_stop > 3:     
                 self.__stage_stop = self.__action = "stop" 
-                print(self.__counter_stop, " ", "stop")
                 self.__counter_stop +=1  
+                print(self.__counter_stop, " ", "stop")
         else:
             self.__stage_stop = None
             self.__deb_counter_stop = 0     
@@ -202,8 +198,8 @@ class GestureRecognition(VideoCamera):
                 self.__deb_counter_advance +=1
             if self.__deb_counter_advance > 3:    
                 self.__stage_advance = self.__action = "advance" 
-                print(self.__counter_advance, " ", "advance") 
-                self.__counter_advance +=1   
+                self.__counter_advance +=1 
+                print(self.__counter_advance, " ", "advance")  
         else:
             self.__stage_advance = None 
             self.__deb_counter_advance = 0 
@@ -238,9 +234,29 @@ class GestureRecognition(VideoCamera):
         cv2.putText(image, 'STAGE', (325,60), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
         cv2.putText(image, self.__action, 
-                    (300,100), 
+                    (250,100), 
                     cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
   
+    def __draw_landmarks(self, image, results):
+         # Render detections
+        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_holistic.POSE_CONNECTIONS,
+                                mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2), 
+                                mp_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2) 
+                                )
+        mp_drawing.draw_landmarks(image, results.left_hand_landmarks, mp_holistic.HAND_CONNECTIONS, 
+                                mp_drawing.DrawingSpec(color=(121,22,76), thickness=2, circle_radius=4), 
+                                mp_drawing.DrawingSpec(color=(121,44,250), thickness=2, circle_radius=2)
+                                ) 
+        mp_drawing.draw_landmarks(image, results.right_hand_landmarks, mp_holistic.HAND_CONNECTIONS, 
+                                mp_drawing.DrawingSpec(color=(121,22,76), thickness=2, circle_radius=4), 
+                                mp_drawing.DrawingSpec(color=(121,44,250), thickness=2, circle_radius=2)
+                                )     
+        mp_drawing.draw_landmarks(image, results.face_landmarks, mp_holistic.FACEMESH_CONTOURS, 
+                                mp_drawing.DrawingSpec(color=(80,110,10), thickness=1, circle_radius=1), 
+                                mp_drawing.DrawingSpec(color=(80,256,121), thickness=1, circle_radius=1)
+                                )   
+
+
 
 def main():
     gesture = GestureRecognition()
