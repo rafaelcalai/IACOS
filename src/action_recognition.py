@@ -1,209 +1,15 @@
 import cv2
-import numpy as np
-import os
-from matplotlib import pyplot as plt
-import time
 import mediapipe as mp
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.callbacks import TensorBoard
-from sklearn.metrics import multilabel_confusion_matrix, accuracy_score
-import keras
+import numpy as np
+mp_drawing = mp.solutions.drawing_utils
+mp_pose = mp.solutions.pose
+mp_hands = mp.solutions.hands
 
-class ActionRecognition:
+class VideoCamera:
+    def __init__(self):
+        pass
 
-    def __init__(self, __no_sequences=15, __sequence_length=30):
-        self.__mp_holistic = mp.solutions.holistic
-        self.__mp_drawing = mp.solutions.drawing_utils
-        # Actions that we try to detect
-        self.__actions = np.array(['stop', 'advance', 'turn_right', 'turn_left'])
-        # Path for exported data, numpy arrays
-        self.__DATA_PATH = os.path.join('../MP_Data')
-        # Videos worth of data
-        self.__no_sequences = __no_sequences
-        # Videos are going to be 30 frames in length
-        self.__sequence_length = __sequence_length
-        self.__colors = [(245,117,16), (117,245,16), (16,117,245),(100,100,100)]
-        self.__video_device = self.__detect_video_device()
-
-
-    def video_detection(self):
-        cap = cv2.VideoCapture(self.__video_device)
-        with self.__mp_holistic.Holistic(min_detection_confidence=0.8, min_tracking_confidence=0.8) as holistic:
-            while cap.isOpened():
-                ret, frame = cap.read()
-                image, results = self.__mediapipe_detection(frame, holistic)
-                print(results)
-                self.__draw_landmarks(image, results)
-		        
-		        # Naming a window 
-                cv2.namedWindow('OpenCV Feed', cv2.WINDOW_NORMAL) 
-	  
-		        # Using resizeWindow() 
-                cv2.resizeWindow('OpenCV Feed', 1200, 800) 
-                cv2.imshow('OpenCV Feed', image)
-
-                if cv2.waitKey(10) & 0xFF == ord('q'):
-                    break
-		
-            cap.release()
-            cv2.destroyAllWindows()
-
-    
-    def collect_images(self, video_device):
-        for action in self.__actions: 
-            for sequence in range(self.__no_sequences):
-                try: 
-                    os.makedirs(os.path.join(self.__DATA_PATH, action, str(sequence)))
-                except:
-                    pass
-
-        cap = cv2.VideoCapture(video_device)
-        # Set mediapipe model 
-        with self.__mp_holistic.Holistic(min_detection_confidence=0.85, min_tracking_confidence=0.85) as holistic:
-            for action in self.__actions:
-                # Loop through sequences aka videos
-                for sequence in range(self.__no_sequences):
-                    # Loop through video length aka sequence length
-                    for frame_num in range(self.__sequence_length):
-                        # Read feed
-                        ret, frame = cap.read()
-
-                        # Make detections
-                        image, results = self.__mediapipe_detection(frame, holistic)
-
-                        # Draw landmarks
-                        self.__draw_landmarks(image, results)
-                    
-                        # NEW Apply wait logic
-                        if frame_num == 0: 
-                            # Naming a window 
-                            cv2.namedWindow('OpenCV Feed', cv2.WINDOW_NORMAL) 
-    
-                            # Using resizeWindow() 
-                            cv2.resizeWindow('OpenCV Feed', 1200, 800) 
-                            cv2.putText(image, 'STARTING COLLECTION', (50,200), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0,255, 0), 4, cv2.LINE_AA)
-                            cv2.putText(image, '{} - Video Number {}/{}'.format(action, sequence+1, self.__no_sequences), (50,250), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 4, cv2.LINE_AA)       
-                            cv2.putText(image, 'Collecting frames for {} Video {}'.format(action, sequence), (15,12), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1, cv2.LINE_AA)
-                                                
-                            cv2.imshow('OpenCV Feed', image)
-                            cv2.waitKey(4000)
-                        else: 
-                            cv2.putText(image, 'Collecting frames for {} Video Number {}'.format(action, sequence), (15,12), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
-                            # Show to screen
-                            cv2.imshow('OpenCV Feed', image)
-                    
-                        # NEW Export keypoints
-                        keypoints = self.__extract_keypoints(results)
-                        npy_path = os.path.join(self.__DATA_PATH, action, str(sequence), str(frame_num))
-                        np.save(npy_path, keypoints)
-
-                        # Break gracefully
-                        if cv2.waitKey(10) & 0xFF == ord('q'):
-                            break  
-            cap.release()
-            cv2.destroyAllWindows()
-
-
-    def training_model(self):
-        label_map = {label:num for num, label in enumerate(self.__actions)}
-        sequences, labels = [], []
-        for action in self.__actions:
-            for sequence in range(self.__no_sequences):
-                window = []
-                for frame_num in range(self.__sequence_length):
-                    res = np.load(os.path.join(self.__DATA_PATH, action, str(sequence), "{}.npy".format(frame_num)))
-                    window.append(res)
-                sequences.append(window)
-                labels.append(label_map[action])        
-
-        X = np.array(sequences)
-        y = to_categorical(labels).astype(int)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.05)
-        
-        log_dir = os.path.join('../Logs')
-        tb_callback = TensorBoard(log_dir=log_dir)
-        model = Sequential()
-        model.add(LSTM(64, return_sequences=True, activation='relu', input_shape=(30,258)))
-        model.add(LSTM(128, return_sequences=True, activation='relu'))
-        model.add(LSTM(64, return_sequences=False, activation='relu'))
-        model.add(Dense(64, activation='relu'))
-        model.add(Dense(32, activation='relu'))
-        model.add(Dense(self.__actions.shape[0], activation='softmax'))
-        
-        res = [.7, 0.2, 0.1]  
-        self.__actions[np.argmax(res)]
-        model.compile(optimizer='Adam', loss='categorical_crossentropy', metrics=['categorical_accuracy'])
-        model.fit(X_train, y_train, epochs=1100, callbacks=[tb_callback])  
-        res = model.predict(X_test)
-
-        model.save('action.h5')
-        model.load_weights('action.h5')   
-        
-        yhat = model.predict(X_test)
-        ytrue = np.argmax(y_test, axis=1).tolist()
-        yhat = np.argmax(yhat, axis=1).tolist()
-        print(multilabel_confusion_matrix(ytrue, yhat))
-        print(accuracy_score(ytrue, yhat))
-    
-
-    def real_time_detection(self):
-        sequence = []
-        sentence = []
-        threshold = 0.95
-
-        model = keras.models.load_model('action.h5')
-        cap = cv2.VideoCapture(0)
-        
-        with self.__mp_holistic.Holistic(min_detection_confidence=0.85, min_tracking_confidence=0.85) as holistic:
-            while cap.isOpened():
-                ret, frame = cap.read()
-                image, results = self.__mediapipe_detection(frame, holistic)
-
-                self.__draw_landmarks(image, results)
-                keypoints = self.__extract_keypoints(results)
-                sequence.append(keypoints)
-                sequence = sequence[-30:]			
-                if len(sequence) == 30:
-                    res = model.predict(np.expand_dims(sequence, axis=0))[0]
-                    
-                    if res[np.argmax(res)] > threshold: 
-                        if len(sentence) > 0: 
-                            if self.__actions[np.argmax(res)] != sentence[-1]:
-                                sentence.append(self.__actions[np.argmax(res)])
-                                #print( res[np.argmax(res)])
-                        else:
-                            sentence.append(self.__actions[np.argmax(res)])
-                            #print( res[np.argmax(res)])
-
-                    if len(sentence) > 5: 
-                        sentence = sentence[-5:]
-
-                    # Viz probabilities
-                    image = self.__prob_viz(res, self.__actions, image, self.__colors)
-                    
-                    
-                    cv2.rectangle(image, (0,0), (640, 40), (245, 117, 16), -1)
-                    cv2.putText(image, ' '.join(sentence), (3,30), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv2.LINE_AA)
-                
-                # Show to screen
-                cv2.imshow('Real Time Detection', image)
-
-                # Break gracefully
-                if cv2.waitKey(10) & 0xFF == ord('q'):
-                    break
-        cap.release()
-        cv2.destroyAllWindows() 
-    
-                     
-    def __detect_video_device(self):
+    def detect_video_device(self):
         video_device = 255
         for i in range(5):
             cap = cv2.VideoCapture(i)
@@ -211,27 +17,236 @@ class ActionRecognition:
                 video_device = i
                 break
         print("Video Device is: ", video_device)
-        return video_device      
-        
-        
-    def __mediapipe_detection(self, image, model):
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image.flags.writeable = False
-        results = model.process(image)
-        image.flags.writeable = True
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-        return image, results    
-        
-        
-    def __draw_landmarks(self, image, results):
-        self.__mp_drawing.draw_landmarks(image, results.pose_landmarks, self.__mp_holistic.POSE_CONNECTIONS) # Draw pose connections
-        self.__mp_drawing.draw_landmarks(image, results.left_hand_landmarks, self.__mp_holistic.HAND_CONNECTIONS) # Draw left hand connections
-        self.__mp_drawing.draw_landmarks(image, results.right_hand_landmarks, self.__mp_holistic.HAND_CONNECTIONS) # Draw right hand connections           
+        return video_device           
+
+
+class GestureRecognition(VideoCamera):
     
-    	
-    def __prob_viz(self, res, actions, input_frame, colors):
-        output_frame = input_frame.copy()
-        for num, prob in enumerate(res):
-            cv2.rectangle(output_frame, (0,60+num*40), (int(prob*100), 90+num*40), colors[num], -1)
-            cv2.putText(output_frame, actions[num], (0, 85+num*40), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2, cv2.LINE_AA)   
-        return output_frame 
+    def __init__(self):
+        self.__video_device = self.detect_video_device()
+        self.__cap = cv2.VideoCapture(self.__video_device)
+        # Curl counter variables
+        self.__counter_left_arm = 0 
+        self.__counter_right_arm = 0 
+        self.__counter_stop = 0 
+        self.__counter_advance = 0 
+
+        self.__deb_counter_left_arm = 0 
+        self.__deb_counter_right_arm = 0 
+        self.__deb_counter_stop = 0 
+        self.__deb_counter_advance = 0 
+
+        self.__stage_left_arm = None
+        self.__stage_right_arm = None
+        self.__stage_stop = None
+        self.__stage_advance = None
+        self.__action = None    
+
+    # Public methods
+    def detec_gesture(self):
+        ## Setup mediapipe instance
+        with mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5) as pose:
+            while self.__cap.isOpened():
+                ret, frame = self.__cap.read()
+                
+                # Recolor image to RGB
+                image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                image.flags.writeable = False
+            
+                # Make detection
+                results = pose.process(image)
+            
+                # Recolor back to BGR
+                image.flags.writeable = True
+                image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+                
+                try:
+                    # Extract landmarks
+                    landmarks = results.pose_landmarks.landmark
+                    
+                    coordinate = self.__get_coordinates(landmarks)
+                    angle = self.__calc_angles(coordinate)
+                    self.__identify_geture(angle)
+                    self.__print_angles(image, angle, coordinate)
+
+                except Exception as error:
+                    print("An exception occurred:", error) # An exception occurred: division by zero
+
+
+                self.__setup_image_box(image)
+
+                # Render detections
+                mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+                                        mp_drawing.DrawingSpec(color=(245,117,66), thickness=2, circle_radius=2), 
+                                        mp_drawing.DrawingSpec(color=(245,66,230), thickness=2, circle_radius=2) 
+                                        )               
+                
+                cv2.imshow('ERR - IACOS ', image)
+
+                if cv2.waitKey(10) & 0xFF == ord('q'):
+                    break
+
+            self.__cap.release()
+            cv2.destroyAllWindows()
+
+    # Private methods
+    def __calculate_angle(self, a, b, c):
+        a = np.array(a) # First
+        b = np.array(b) # Mid
+        c = np.array(c) # End
+        
+        radians = np.arctan2(c[1]-b[1], c[0]-b[0]) - np.arctan2(a[1]-b[1], a[0]-b[0])
+        angle = np.abs(radians*180.0/np.pi)
+
+        return angle
+    
+    def __print_angles(self, image, angle, coordinate):
+
+        cv2.putText(image, str(angle["left_elbow"]), 
+                    tuple(np.multiply(coordinate["left_elbow"], [640, 480]).astype(int)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+        
+        cv2.putText(image, str(angle["left_shoulder"]), 
+                    tuple(np.multiply(coordinate["left_shoulder"], [640, 480]).astype(int)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+        
+        cv2.putText(image, str(angle["right_elbow"]), 
+                    tuple(np.multiply(coordinate["right_elbow"], [640, 480]).astype(int)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+
+        cv2.putText(image, str(angle["right_shoulder"]), 
+                    tuple(np.multiply(coordinate["right_shoulder"], [640, 480]).astype(int)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+        
+        cv2.putText(image, str(angle["right_wrist"]), 
+                    tuple(np.multiply(coordinate["right_wrist"], [640, 480]).astype(int)), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2, cv2.LINE_AA)
+        
+    def __get_coordinates(self, landmarks):
+        coordinate = {}
+        coordinate["left_shoulder"] = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].x,landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y]
+        coordinate["left_elbow"] = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].x,landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y]
+        coordinate["left_wrist"] = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].x,landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y]
+        coordinate["left_hip"] = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].x,landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y]
+   
+        coordinate["right_shoulder"] = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y]
+        coordinate["right_elbow"] = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y]
+        coordinate["right_wrist"] = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y]
+        coordinate["right_hip"] = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].x,landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y]
+
+        coordinate["z_right_shoulder"] = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].y,landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER.value].z]
+        coordinate["z_right_elbow"] = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].y,landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW.value].z]
+        coordinate["z_right_wrist"] = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].y,landmarks[mp_pose.PoseLandmark.RIGHT_WRIST.value].z]
+        coordinate["z_right_hip"] = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].y,landmarks[mp_pose.PoseLandmark.RIGHT_HIP.value].z]
+
+        coordinate["z_left_shoulder"] = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].y,landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER.value].z]
+        coordinate["z_left_elbow"] = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].y,landmarks[mp_pose.PoseLandmark.LEFT_ELBOW.value].z]
+        coordinate["z_left_wrist"] = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].y,landmarks[mp_pose.PoseLandmark.LEFT_WRIST.value].z]
+        coordinate["z_left_hip"] = [landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].y,landmarks[mp_pose.PoseLandmark.LEFT_HIP.value].z]
+        return coordinate
+
+    def __calc_angles(self, coordinate):
+        angle = {}
+        angle["left_elbow"] = self.__calculate_angle(coordinate["left_shoulder"], coordinate["left_elbow"], coordinate["left_wrist"])
+        angle["left_arm"]  = self.__calculate_angle(coordinate["right_shoulder"], coordinate["left_shoulder"], coordinate["left_wrist"])
+        angle["left_shoulder"] = self.__calculate_angle(coordinate["left_hip"], coordinate["left_elbow"], coordinate["left_wrist"])
+
+        angle["right_elbow"] = self.__calculate_angle(coordinate["right_shoulder"], coordinate["right_elbow"], coordinate["right_wrist"])
+        angle["right_arm"] = self.__calculate_angle(coordinate["left_shoulder"], coordinate["right_shoulder"], coordinate["right_wrist"])
+        angle["right_shoulder"] = self.__calculate_angle(coordinate["right_hip"], coordinate["right_elbow"], coordinate["right_wrist"])
+
+        angle["right_wrist"] = self.__calculate_angle(coordinate["z_right_hip"], coordinate["z_right_shoulder"], coordinate["z_right_wrist"])
+        angle["left_wrist"] = self.__calculate_angle(coordinate["z_left_hip"], coordinate["z_left_shoulder"], coordinate["z_left_wrist"])
+        return angle
+
+    def __identify_geture(self, angle):
+        # Curl counter logic
+        if angle["left_elbow"] > 160 and (angle["left_shoulder"] > 85 and angle["left_shoulder"] < 140) and self.__action != "turn_left" :
+            if self.__stage_left_arm is None:
+                self.__deb_counter_left_arm +=1
+            if self.__deb_counter_left_arm > 3:    
+                stage_left_arm = self.__action = "turn_left" 
+                print(self.__counter_left_arm, " ", stage_left_arm)
+                self.__counter_left_arm +=1 
+        else:
+            self.__stage_left_arm = None
+            self.__deb_counter_left_arm = 0
+
+
+        # Curl counter logic
+        if angle["right_elbow"] > 160 and (angle["right_shoulder"] > 85 and angle["right_shoulder"] < 140) and self.__action !=  "turn_right":
+            if self.__stage_right_arm is None:
+                self.__deb_counter_right_arm +=1
+            if self.__deb_counter_right_arm > 3:     
+                self.__stage_right_arm = self.__action = "turn_right"
+                print(self.__counter_right_arm, " ","turn_right")
+                self.__counter_right_arm += 1  
+        else:
+            self.__stage_right_arm = None
+            self.__deb_counter_right_arm = 0  
+
+        # Curl counter logic
+        if angle["right_arm"] > 95 and angle["right_arm"] < 110  and (angle["right_wrist"] > 100 and angle["right_shoulder"] < 180) and self.__action != "stop":
+            if self.__stage_stop is None:
+                self.__deb_counter_stop +=1
+            if self.__deb_counter_stop > 3:     
+                self.__stage_stop = self.__action = "stop" 
+                print(self.__counter_stop, " ", "stop")
+                self.__counter_stop +=1  
+        else:
+            self.__stage_stop = None
+            self.__deb_counter_stop = 0     
+
+        if angle["left_arm"] > 70 and angle["left_arm"] < 100  and (angle["left_wrist"] > 70 and angle["left_wrist"] < 100) and self.__action != "advance":
+            if self.__stage_advance is None:
+                self.__deb_counter_advance +=1
+            if self.__deb_counter_advance > 3:    
+                self.__stage_advance = self.__action = "advance" 
+                print(self.__counter_advance, " ", "advance") 
+                self.__counter_advance +=1   
+        else:
+            self.__stage_advance = None 
+            self.__deb_counter_advance = 0 
+
+    def __setup_image_box(self, image):
+        cv2.rectangle(image, (0,0), (680,110), (245,117,16), -1)
+        
+        cv2.putText(image, 'LEFT REPS', (10,12), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, str(self.__counter_left_arm), 
+                    (10,40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)  
+
+        cv2.putText(image, 'RIGHT REPS', (150,12), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, str(self.__counter_right_arm), 
+                    (200,40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
+        
+        cv2.putText(image, 'STOP REPS', (300,12), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, str(self.__counter_stop), 
+                    (350,40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
+        
+        cv2.putText(image, 'ADVANCE REPS', (450,12), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, str(self.__counter_advance),    
+                    (500,40), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
+        
+        cv2.putText(image, 'STAGE', (325,60), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.40, (0,0,0), 1, cv2.LINE_AA)
+        cv2.putText(image, self.__action, 
+                    (300,100), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255,255,255), 2, cv2.LINE_AA)
+  
+
+def main():
+    gesture = GestureRecognition()
+    gesture.detect_video_device()
+    gesture.detec_gesture()
+
+
+if __name__ == "__main__":
+    main()
