@@ -22,7 +22,7 @@ class VideoCamera:
 
 class GestureRecognition(VideoCamera):
     
-    def __init__(self):
+    def __init__(self, queue=None):
         self.__video_device = self.detect_video_device()
         self.__cap = cv2.VideoCapture(self.__video_device)
         # Curl counter variables
@@ -40,7 +40,10 @@ class GestureRecognition(VideoCamera):
         self.__stage_right_arm = None
         self.__stage_stop = None
         self.__stage_advance = None
-        self.__action = None    
+        self.__action = None  
+        
+        self.queue = queue 
+  
 
     # Public methods
     def detec_gesture(self):
@@ -86,7 +89,7 @@ class GestureRecognition(VideoCamera):
             cv2.destroyAllWindows()
 
     # Private methods
-    def __calculate_angle(self, a, b, c):
+    def __calc_angle(self, a, b, c):
         a = np.array(a) # First
         b = np.array(b) # Mid
         c = np.array(c) # End
@@ -143,19 +146,20 @@ class GestureRecognition(VideoCamera):
 
     def __calc_angles(self, coordinate):
         angle = {}
-        angle["left_elbow"] = self.__calculate_angle(coordinate["left_shoulder"], coordinate["left_elbow"], coordinate["left_wrist"])
-        angle["left_arm"]  = self.__calculate_angle(coordinate["right_shoulder"], coordinate["left_shoulder"], coordinate["left_wrist"])
-        angle["left_shoulder"] = self.__calculate_angle(coordinate["left_hip"], coordinate["left_elbow"], coordinate["left_wrist"])
+        angle["left_elbow"] = self.__calc_angle(coordinate["left_shoulder"], coordinate["left_elbow"], coordinate["left_wrist"])
+        angle["left_arm"]  = self.__calc_angle(coordinate["right_shoulder"], coordinate["left_shoulder"], coordinate["left_wrist"])
+        angle["left_shoulder"] = self.__calc_angle(coordinate["left_hip"], coordinate["left_elbow"], coordinate["left_wrist"])
 
-        angle["right_elbow"] = self.__calculate_angle(coordinate["right_shoulder"], coordinate["right_elbow"], coordinate["right_wrist"])
-        angle["right_arm"] = self.__calculate_angle(coordinate["left_shoulder"], coordinate["right_shoulder"], coordinate["right_wrist"])
-        angle["right_shoulder"] = self.__calculate_angle(coordinate["right_hip"], coordinate["right_elbow"], coordinate["right_wrist"])
+        angle["right_elbow"] = self.__calc_angle(coordinate["right_shoulder"], coordinate["right_elbow"], coordinate["right_wrist"])
+        angle["right_arm"] = self.__calc_angle(coordinate["left_shoulder"], coordinate["right_shoulder"], coordinate["right_wrist"])
+        angle["right_shoulder"] = self.__calc_angle(coordinate["right_hip"], coordinate["right_elbow"], coordinate["right_wrist"])
 
-        angle["right_wrist"] = self.__calculate_angle(coordinate["z_right_hip"], coordinate["z_right_shoulder"], coordinate["z_right_wrist"])
-        angle["left_wrist"] = self.__calculate_angle(coordinate["z_left_hip"], coordinate["z_left_shoulder"], coordinate["z_left_wrist"])
+        angle["right_wrist"] = self.__calc_angle(coordinate["z_right_hip"], coordinate["z_right_shoulder"], coordinate["z_right_wrist"])
+        angle["left_wrist"] = self.__calc_angle(coordinate["z_left_hip"], coordinate["z_left_shoulder"], coordinate["z_left_wrist"])
         return angle
 
     def __identify_geture(self, angle):
+        items=[]
         # Curl counter logic
         if angle["left_elbow"] > 160 and (angle["left_shoulder"] > 85 and angle["left_shoulder"] < 140) and self.__action != "turn_left" :
             if self.__stage_left_arm is None:
@@ -164,6 +168,9 @@ class GestureRecognition(VideoCamera):
                 stage_left_arm = self.__action = "turn_left" 
                 self.__counter_left_arm +=1 
                 print(self.__counter_left_arm, " ", stage_left_arm)
+                if self.queue:
+                    item='L' #Step 1.2
+                    self.queue.put(item)
         else:
             self.__stage_left_arm = None
             self.__deb_counter_left_arm = 0
@@ -177,6 +184,9 @@ class GestureRecognition(VideoCamera):
                 self.__stage_right_arm = self.__action = "turn_right"
                 self.__counter_right_arm += 1
                 print(self.__counter_right_arm, " ","turn_right")  
+                if self.queue:
+                    item='R' #Step 1.2
+                    self.queue.put(item)
         else:
             self.__stage_right_arm = None
             self.__deb_counter_right_arm = 0  
@@ -189,6 +199,9 @@ class GestureRecognition(VideoCamera):
                 self.__stage_stop = self.__action = "stop" 
                 self.__counter_stop +=1  
                 print(self.__counter_stop, " ", "stop")
+                if self.queue:
+                    item='S' #Step 1.2
+                    self.queue.put(item)
         else:
             self.__stage_stop = None
             self.__deb_counter_stop = 0     
@@ -199,7 +212,10 @@ class GestureRecognition(VideoCamera):
             if self.__deb_counter_advance > 3:    
                 self.__stage_advance = self.__action = "advance" 
                 self.__counter_advance +=1 
-                print(self.__counter_advance, " ", "advance")  
+                print(self.__counter_advance, " ", "advance")
+                if self.queue:
+                    item='F' #Step 1.2
+                    self.queue.put(item)  
         else:
             self.__stage_advance = None 
             self.__deb_counter_advance = 0 

@@ -2,9 +2,10 @@ from threading import *
 import time
 import queue
 from turtle_cmd import TurtleCmdPublisher, cmd
+from action_recognition import GestureRecognition
 
 # ros2 run turtlesim turtlesim_node
-
+'''
 items=[]
 def produce(c):
    while True:
@@ -36,8 +37,15 @@ def produce(c):
        print("Producer giving Notification")
 
 
-def consume(c, args=None):
-    cmd(c)
+'''
+
+def produce(queue):
+    gesture = GestureRecognition(queue)
+    gesture.detect_video_device()
+    gesture.detec_gesture()
+
+def consume(queue, args=None):
+    cmd(queue)
 
 def main():    
     q=queue.Queue()

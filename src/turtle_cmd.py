@@ -16,7 +16,7 @@ class TurtleCmdPublisher(Node):
         if queue:
             self.queue = queue
             self.timer = self.create_timer(timer_period, self.timer_callback2)
-        else:
+        else:   
             self.timer = self.create_timer(timer_period, self.timer_callback)  
 
     def timer_callback(self):
