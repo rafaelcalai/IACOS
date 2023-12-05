@@ -57,12 +57,10 @@ class TurtleCmdPublisher(Node):
     def timer_callback2(self):
         vel_msg = Twist()
 
-
         if not self.queue.empty():
             self.cmd = str(self.queue.get())
             self.get_logger().info("Command received: %s" % self.cmd)
             
-
         #Converting from angles to radians
         relative_angle = 90*2*PI/360 # 90 degrees
     
@@ -73,7 +71,6 @@ class TurtleCmdPublisher(Node):
         vel_msg.angular.x=0.0
         vel_msg.angular.y=0.0
         vel_msg.angular.z=0.0
-
 
         if self.cmd == 'R' or self.cmd == 'r':
             vel_msg.angular.z = -abs(relative_angle)
@@ -86,7 +83,6 @@ class TurtleCmdPublisher(Node):
         else:    
             vel_msg.linear.x=0.5
 
-
         self.publisher_.publish(vel_msg)
         self.get_logger().info('Publishing command:"%s" "%s"' % (self.cmd, vel_msg))
 
@@ -96,8 +92,7 @@ def cmd(queue=None,args=None):
     node = rclpy.create_node('turtle_commander')
     node.get_logger().info('Created node')
 
-    turtle_cmd_publisher = TurtleCmdPublisher(queue)
-    
+    turtle_cmd_publisher = TurtleCmdPublisher(queue)   
     rclpy.spin(turtle_cmd_publisher)
 
     # Destroy the node explicitly
